@@ -3,7 +3,16 @@ TARGET="@TARGET@"
 BOOTDEV="@BOOTDEV@"
 sysconfdir="@sysconfdir@"
 
-[ ! -e "${sysconfdir}/nv_boot_control.conf" ] || exit 0
+if [ -e "${sysconfdir}/nv_boot_control.conf" ]; then
+    echo "${sysconfdir}/nv_boot_control.conf exits and is not a broken symlink, exiting"
+    exit 0
+fi
+
+if [ -h "${sysconfdir}/nv_boot_control.conf" ]; then
+    nvbootlinkpath=$(readlink "${sysconfdir}/nv_boot_control.conf")
+    echo "Ensuring path to symlink at ${nvbootlinkpath} exists"
+    mkdir -p $(dirname "${nvbootlinkpath}")
+fi
 
 if [ ! -e "${sysconfdir}/nv_boot_control.template" ]; then
     echo "ERR: nv_boot_control.conf template file not found" >&2
