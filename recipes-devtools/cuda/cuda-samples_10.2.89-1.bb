@@ -5,6 +5,7 @@ LIC_FILES_CHKSUM = "file://EULA.txt;md5=37774d0b88c5743e8fe8e5c10b057270"
 
 COMPATIBLE_MACHINE = "(tegra)"
 
+L4T_DEB_GROUP = "cuda-samples"
 CUDA_VERSION_DASHED = "${@d.getVar('CUDA_VERSION').replace('.','-')}"
 SRC_COMMON_DEBS = "${BPN}-${CUDA_VERSION_DASHED}_${PV}_arm64.deb;unpack=false"
 SRC_URI[sha256sum] = "121e273d8586bde904ceeab72a603a86d781f3bac6d3a21732703ca2ca9ec528"
@@ -41,8 +42,8 @@ S = "${WORKDIR}/${BP}"
 B = "${S}"
 
 CUDA_PATH = "/usr/local/cuda-${CUDA_VERSION}"
-CC_FIRST = "${@d.getVar('CC').split()[0]}"
-CC_REST = "${@' '.join(d.getVar('CC').split()[1:])}"
+CC_FIRST = "${@cuda_extract_compiler('CC', d)[0]}"
+CC_REST = "${@cuda_extract_compiler('CC', d, prefix='')[1]}"
 CFLAGS += "-I=${CUDA_PATH}/include"
 EXTRA_NVCCFLAGS = "-I${STAGING_DIR_HOST}${CUDA_PATH}/include"
 

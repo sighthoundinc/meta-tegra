@@ -3,6 +3,7 @@
 import sys
 import argparse
 import uuid
+import logging
 
 uuids = {}
 
@@ -30,13 +31,27 @@ def validate_guid(guid):
     return guid
 
 class Partition(object):
-    def __init__(self, element, sector_size):
+    def __init__(self, element, sector_size, curpos, partnum, bootdev):
         self.name = element.get('name')
-        self.id = element.get('id')
         self.type = element.get('type')
+        self.id = element.get('id', (None if self.is_partition_table() else partnum))
         self.oem_sign = element.get('oemsign', 'false') == 'true'
         guid = element.find('unique_guid')
         self.partguid = "" if guid is None else validate_guid(guid.text.strip())
+
+        alignment = element.find('align_boundary')
+        if alignment is not None:
+            alignval = int(alignment.text.strip(), base=0) # in bytes
+            curposbytes = alignval * ((curpos * sector_size + alignval-1) // alignval)
+            curpos = curposbytes // sector_size
+        startloc = element.find('start_location')
+        if startloc is None:
+            self.start_location = curpos
+        else:
+            self.start_location = (int(startloc.text.strip(), base=0) + sector_size-1) // sector_size
+            if self.start_location < curpos:
+                raise RuntimeError("partition {} start location {} overlaps previous partition".format(self.name, self.start_location))
+
         aa = element.find('allocation_attribute')
         if aa is None:
             self.alloc_attr = 0
@@ -45,31 +60,59 @@ class Partition(object):
             if aastr.startswith("0x"):
                 aastr = aastr[2:]
             self.alloc_attr = int(aastr, 16)
+
         if element.find('size') is None:
             self.size = 0
+        elif self.name == "GP1":
+            # NV flash tools (for t210) ignore this size setting
+            # and just use the standard size
+            self.size = 34
         else:
             s = element.find('size').text.strip()
-            try:
-                self.size = (int(s, 10) + sector_size-1) // sector_size
-            except ValueError:
-                self.size = s
+            if s.lower().startswith('0xffffffff'):
+                self.size = -1
+            else:
+                self.size = int(s, 0)
+            if self.size > 0:
+                self.size = (self.size + sector_size-1) // sector_size
+
         fname = element.find('filename')
         self.filename = "" if fname is None else fname.text.strip()
+        logging.info("Partition {}: id={}, type={}, start={}, size={}".format(self.name, self.id, self.type,
+                                                                              self.start_location, self.size))
 
     def filltoend(self):
         return (self.alloc_attr & 0x800) == 0x800
-    def is_partition_table(self):
-        return self.type in ['GP1', 'GPT', 'protective_master_boot_record', 'primary_gpt', 'secondary_gpt']
+
+    def is_partition_table(self, primary_only=False):
+        if self.type in ['GP1', 'protective_master_boot_record', 'primary_gpt']:
+            return True
+        return not primary_only and self.type in ['GPT', 'secondary_gpt']
 
 class Device(object):
-    def __init__(self, element):
+    def __init__(self, element, devcount):
         self.type = element.get('type')
         self.instance = element.get('instance')
         self.sector_size = int(element.get('sector_size', '512'), 0)
         self.num_sectors = int(element.get('num_sectors', '0'), 0)
         self.partitions = []
+        self.is_boot_device = self.type in ['sdmmc_boot', 'spi'] or (self.type == 'sdmmc' and devcount == 0)
+        logging.info("Device {}: instance={}, sector_size={}, num_sectors={}, boot_device={}".format(self.type, self.instance,
+                                                                                                     self.sector_size, self.num_sectors,
+                                                                                                     self.is_boot_device))
+        self.parttable_size = 0
+        nextpart = 1
+        curpos = 0
         for partnode in element.findall('./partition'):
-            self.partitions.append(Partition(partnode, self.sector_size))
+            part = Partition(partnode, self.sector_size, curpos, nextpart, self.is_boot_device)
+            self.partitions.append(part)
+            if part.is_partition_table(primary_only=True):
+                self.parttable_size += part.size
+            if not part.is_partition_table():
+                nextpart = int(part.id) + 1
+            if part.type != 'secondary_gpt' and not part.filltoend():
+                curpos = part.start_location + part.size
+
 
 class PartitionLayout(object):
     def __init__(self, configfile):
@@ -82,7 +125,7 @@ class PartitionLayout(object):
         self.devtypes = []
         self.device_count = 0
         for devnode in tree.findall('./device'):
-            dev = Device(devnode)
+            dev = Device(devnode, self.device_count)
             if dev.type == 'sdmmc':
                 dev.type = 'sdmmc_boot' if self.device_count == 0 else 'sdmmc_user'
             if dev.type in self.devices:
@@ -91,6 +134,71 @@ class PartitionLayout(object):
             self.device_count += 1
             self.devtypes.append(dev.type)
 
+
+def extract_layout(infile, devtype, outf):
+    import xml.etree.ElementTree as ET
+    tree = ET.parse(infile)
+    root = tree.getroot()
+    for dev in root.findall('device'):
+        if dev.get('type') != devtype:
+            root.remove(dev)
+    tree.write(outf, encoding='unicode', xml_declaration=True)
+    outf.write("\n")
+
+
+def split_layout(infile, mmcf, sdcardf, sdcard_sectors):
+    import xml.etree.ElementTree as ET
+    sdcard_parts = ['APP', 'APP_b', 'UDA', 'kernel', 'kernel_b', 'kernel-dtb', 'kernel-dtb_b']
+    mmctree = ET.parse(infile)
+    sdcardtree = ET.parse(infile)
+    root = mmctree.getroot()
+    for dev in root.findall('device'):
+        if dev.get('type') == 'sdmmc_user':
+            for partnode in dev.findall('partition'):
+                partname = partnode.get('name')
+                if partname in sdcard_parts:
+                    dev.remove(partnode)
+    root = sdcardtree.getroot()
+    for dev in root.findall('device'):
+        if dev.get('type') == 'sdmmc_user':
+            dev.set('type', 'sdcard')
+            dev.set('instance', '0')
+            dev.set('num_sectors', str(sdcard_sectors))
+            for partnode in dev.findall('partition'):
+                partname = partnode.get('name')
+                if partname not in sdcard_parts + ['master_boot_record', 'primary_gpt', 'secondary_gpt']:
+                    dev.remove(partnode)
+        else:
+            root.remove(dev)
+    mmctree.write(mmcf, encoding='unicode', xml_declaration=True)
+    mmcf.write("\n")
+    sdcardtree.write(sdcardf, encoding='unicode', xml_declaration=True)
+    sdcardf.write("\n")
+
+
+def size_to_sectors(sizespec):
+    suffix = sizespec[-1:]
+    if suffix in ['G', 'K', 'M']:
+        sizespec = sizespec[:-1]
+    try:
+        size = int(sizespec)
+    except ValueError:
+        raise RuntimeError("SDcard size must be integral number of sectors, or suffixed with G, K, or M")
+
+    if suffix == 'K':
+        size *= 1000
+    elif suffix == 'M':
+        size *= 1000 * 1000
+    elif suffix == 'G':
+        size *= 1000 * 1000 * 1000
+    else:
+        return size
+
+    # For suffixed specs, convert bytes to sectors,
+    # reserving 1% for overhead
+    return int(int(size * 99 / 100 + 511) / 512)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="""
@@ -98,28 +206,58 @@ Extracts partition information from an NVIDIA flash.xml file
 """)
     parser.add_argument('-t', '--type', help='device type to extract information for', action='store')
     parser.add_argument('-l', '--list-types', help='list the device types described in the file', action='store_true')
+    parser.add_argument('-e', '--extract', help='generate a new XML file extracting just the specified device type', action='store_true')
+    parser.add_argument('-s', '--split', help='SDCard XML output file for MMC/SDCard split on Jetson AGX Xavier', action='store')
+    parser.add_argument('-S', '--sdcard-size', help='SDCard size for use with --split', action='store', default="33554432")
+    parser.add_argument('-o', '--output', help='file to write output to', action='store')
+    parser.add_argument('-v', '--verbose', help='verbose logging', action='store_true')
     parser.add_argument('filename', help='name of the XML file to parse', action='store')
 
     args = parser.parse_args()
+    logging.basicConfig(format='%(message)s', level=logging.INFO if args.verbose else logging.WARNING)
     layout = PartitionLayout(args.filename)
     if args.list_types:
         print("Device types:\n{}".format('\n'.join(['    ' + t for t in layout.devtypes])))
         return 0
+    if args.split:
+        sdcardf = open(args.split, "w")
+        if args.output:
+            outf = open(args.output, "w")
+        else:
+            outf = sys.stdout
+        split_layout(args.filename, outf, sdcardf, size_to_sectors(args.sdcard_size))
+        return 0
+
     if not args.type:
         if layout.device_count > 1:
             raise RuntimeError("Must specify --type for layouts with multiple devices")
         args.type = layout.devtypes[0]
-    partitions = [part for part in layout.devices[args.type].partitions if not part.is_partition_table()]
-    blksize = layout.devices[args.type].sector_size
-    for n, part in enumerate(partitions):
-        print("blksize={};partnumber={};partname=\"{}\";partsize={};"
-              "partfile=\"{}\";partguid=\"{}\";partfilltoend={}".format(blksize,
-                                                                        n+1,
-                                                                        part.name,
-                                                                        part.size,
-                                                                        part.filename,
-                                                                        part.partguid,
-                                                                        1 if part.filltoend() else 0))
+    else:
+        if args.type not in layout.devices:
+            raise RuntimeError("Device type '{}' not present; available types: {}".format(args.type,
+                                                                                          ', '.join(list(layout.devices.keys()))))
+    if args.output:
+        outf = open(args.output, "w")
+    else:
+        outf = sys.stdout
+
+    if args.extract:
+        extract_layout(args.filename, args.type, outf)
+    else:
+        partitions = [part for part in layout.devices[args.type].partitions if not part.is_partition_table()]
+        blksize = layout.devices[args.type].sector_size
+        for n, part in enumerate(partitions):
+            print("blksize={};partnumber={};partname=\"{}\";start_location={};partsize={};"
+                  "partfile=\"{}\";partguid=\"{}\";partfilltoend={}".format(blksize,
+                                                                            part.id,
+                                                                            part.name,
+                                                                            part.start_location,
+                                                                            part.size,
+                                                                            part.filename,
+                                                                            part.partguid,
+                                                                            1 if part.filltoend() else 0),
+                  file=outf)
+    outf.close()
 
 if __name__ == '__main__':
     try:

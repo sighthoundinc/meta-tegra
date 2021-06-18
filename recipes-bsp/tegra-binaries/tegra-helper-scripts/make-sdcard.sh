@@ -100,7 +100,11 @@ make_partitions() {
     done
     eval "${PARTS[$FINALPART]}"
     echo -n "$partname..."
-    sgdisk "$output" --largest-new=$partnumber --typecode=$partnumber:8300 -c $partnumber:$partname >/dev/null 2>&1
+    if [ $partfilltoend -eq 1 ]; then
+	sgdisk "$output" --largest-new=$partnumber --typecode=$partnumber:8300 -c $partnumber:$partname >/dev/null 2>&1
+    else
+	sgdisk "$output" --new=$partnumber:0:+$partsize --typecode=$partnumber:8300 -c $partnumber:$partname >/dev/null 2>&1
+    fi
 }
 
 copy_to_device() {
@@ -211,7 +215,6 @@ confirm() {
 		    ;;
 		*)
 		    echo "Please answer 'yes' or' no'."
-		    break;
 		    ;;
 	    esac
 	else
@@ -331,6 +334,7 @@ if ! sgdisk "$output" --verify >/dev/null 2>&1; then
     exit 1
 fi
 if [ -b "$output" ]; then
+    sleep 1
     if ! $SUDO partprobe "$output" >/dev/null 2>&1; then
 	echo "ERR: partprobe failed after partitioning $output" >&2
 	exit 1

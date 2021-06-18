@@ -10,17 +10,17 @@ require recipes-kernel/linux/linux-yocto.inc
 DEPENDS_remove = "kern-tools-native"
 DEPENDS_append = " kern-tools-tegra-native"
 
-LINUX_VERSION ?= "4.9.140"
+LINUX_VERSION ?= "4.9.201"
 PV = "${LINUX_VERSION}+git${SRCPV}"
 FILESEXTRAPATHS_prepend := "${THISDIR}/${BPN}-${@bb.parse.BBHandler.vars_from_file(d.getVar('FILE', False),d)[1]}:"
 
 LINUX_VERSION_EXTENSION ?= "-l4t-r${@'.'.join(d.getVar('L4T_VERSION').split('.')[:2])}"
 SCMVERSION ??= "y"
 
-SRCBRANCH = "patches${LINUX_VERSION_EXTENSION}"
-SRCREV = "a58470bb0f05f9189781448eb64599cc4aac49af"
+SRCBRANCH = "oe4t-patches${LINUX_VERSION_EXTENSION}"
+SRCREV = "a3633e2e1cf4c7309a88303f06ee4eb20188c716"
 KBRANCH = "${SRCBRANCH}"
-SRC_REPO = "github.com/OE4T/linux-tegra-4.9"
+SRC_REPO = "github.com/OE4T/linux-tegra-4.9;protocol=https"
 KERNEL_REPO = "${SRC_REPO}"
 SRC_URI = "git://${KERNEL_REPO};name=machine;branch=${KBRANCH} \
            ${@'file://localversion_auto.cfg' if d.getVar('SCMVERSION') == 'y' else ''} \
@@ -60,6 +60,22 @@ bootimg_from_bundled_initramfs() {
                                     --output $deployDir/${initramfs_base_name}.cboot
             chmod 0644 $deployDir/${initramfs_base_name}.cboot
             ln -sf ${initramfs_base_name}.cboot $deployDir/${initramfs_symlink_name}.cboot
+        done
+    elif [  -z "${INITRAMFS_IMAGE}" ]; then
+        rm -f ${WORKDIR}/initrd
+        touch ${WORKDIR}/initrd
+        for imageType in ${KERNEL_IMAGETYPES} ; do
+            if [ "$imageType" = "fitImage" ] ; then
+                continue
+            fi
+	    baseName=$imageType-${KERNEL_IMAGE_NAME}
+            ${STAGING_BINDIR_NATIVE}/tegra186-flash/mkbootimg \
+                                    --kernel $deployDir/${baseName}.bin \
+                                    --ramdisk ${WORKDIR}/initrd \
+                                    --output $deployDir/${baseName}.cboot
+            chmod 0644 $deployDir/${baseName}.cboot
+            ln -sf ${baseName}.cboot $deployDir/$imageType-${KERNEL_IMAGE_LINK_NAME}.cboot
+            ln -sf ${baseName}.cboot $deployDir/$imageType.cboot
         done
     fi
 }

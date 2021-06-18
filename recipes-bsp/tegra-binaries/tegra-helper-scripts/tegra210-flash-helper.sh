@@ -1,13 +1,18 @@
 #!/bin/bash
 bup_blob=0
 keyfile=
+keyfile_args=
+spi_only=
 no_flash=0
+flash_cmd=
 sdcard=
 make_sdcard_args=
 imgfile=
 dataimg=
+inst_args=""
 blocksize=4096
-ARGS=$(getopt -n $(basename "$0") -l "bup,no-flash,sdcard,datafile:" -o "u:s:b:B:y" -- "$@")
+
+ARGS=$(getopt -n $(basename "$0") -l "bup,no-flash,sdcard,spi-only,datafile:,usb-instance:" -o "u:s:b:B:yc:" -- "$@")
 if [ $? -ne 0 ]; then
     echo "Error parsing options" >&2
     exit 1
@@ -29,12 +34,22 @@ while true; do
 	    sdcard=yes
 	    shift
 	    ;;
+	--spi-only)
+	    spi_only=yes
+	    shift
+	    ;;
 	--datafile)
 	    dataimg="$2"
 	    shift 2
 	    ;;
+	--usb-instance)
+	    usb_instance="$2"
+	    inst_args="--instance ${usb_instance}"
+	    shift 2
+	    ;;
 	-u)
 	    keyfile="$2"
+	    keyfile_args="--key \"$keyfile\""
 	    shift 2
 	    ;;
 	-s)
@@ -52,6 +67,10 @@ while true; do
 	-y)
 	    make_sdcard_args="$make_sdcard_args -y"
 	    shift
+	    ;;
+	-c)
+	    flash_cmd="$2"
+	    shift 2
 	    ;;
 	--)
 	    shift
@@ -96,7 +115,7 @@ if [ -z "$BOARDID" -a -z "$FAB" ]; then
 	echo "ERR: chip does not identify as tegra210 ($chipid)" >&2
 	exit 1
     fi
-    if python3 $flashapp --chip 0x21 --skipuid --applet nvtboot_recovery.bin --cmd "dump eeprom boardinfo ${cvm_bin}"; then
+    if python3 $flashapp ${inst_args} --chip 0x21 --skipuid $keyfile_args --applet nvtboot_recovery.bin --cmd "dump eeprom boardinfo ${cvm_bin}"; then
 	boardid=`$here/chkbdinfo -i ${cvm_bin} | tr -d ' ' | tr [a-z] [A-Z]`
 	BOARDID="$boardid"
 	boardver=`$here/chkbdinfo -f ${cvm_bin} | tr -d ' ' | tr [a-z] [A-Z]`
@@ -180,7 +199,17 @@ else
     fi
     touch APPFILE
 fi
-sed -e"s,VERFILE,${MACHINE}_bootblob_ver.txt," -e"s,DTBFILE,$DTBFILE," $appfile_sed "$flash_in" > flash.xml
+if [ "$spi_only" = "yes" ]; then
+    if [ ! -e "$here/nvflashxmlparse" ]; then
+	echo "ERR: missing nvflashxmlparse script" >&2
+	exit 1
+    fi
+    "$here/nvflashxmlparse" --extract -t spi -o flash.xml.tmp "$flash_in" || exit 1
+else
+    cp "$flash_in" flash.xml.tmp
+fi
+sed -e"s,VERFILE,${MACHINE}_bootblob_ver.txt," -e"s,DTBFILE,$DTBFILE," $appfile_sed flash.xml.tmp > flash.xml
+rm flash.xml.tmp
 boardcfg=
 [ -z "$boardcfg_file" ] || boardcfg="--boardconfig $boardcfg_file"
 if [ $bup_blob -ne 0 -o "$sdcard" = "yes" ]; then
@@ -195,7 +224,7 @@ else
 	    $here/mksparse -b ${blocksize} --fillpattern=0 "$dataimg" "$datafile" || exit 1
 	fi
     fi
-    cmd="flash;reboot"
+    cmd=${flash_cmd:-"flash;reboot"}
     if [ "$boardid" = "3448" ]; then
 	binargs="--bins \"EBT cboot.bin;DTB $dtb_file\""
     fi
@@ -219,29 +248,37 @@ if [ -n "$keyfile" ]; then
     flashappname=$(basename "$flashapp")
     . "$here/odmsign.func"
     (odmsign_ext) || exit 1
+    binargs=
+    if [ "$boardid" = "3448" ]; then
+	binargs="--bins \"EBT cboot.bin.signed;DTB ${dtb_file}.signed\""
+    fi
     if [ $no_flash -ne 0 ]; then
 	rm -f flashcmd.txt
 	echo "#!/bin/sh" > flashcmd.txt
-	if [ "$boardid" = "3448" ]; then
-	    binargs="--bins \"EBT cboot.bin.signed;DTB ${dtb_file}.signed\""
-	fi
-	echo "python3 $flashapp --bl cboot.bin.signed --bct \"$sdramcfg_file\" --odmdata $odmdata \
+	echo "python3 $flashapp ${inst_args} --bl cboot.bin.signed --bct \"$(basename $sdramcfg_file .cfg).bct\" --odmdata $odmdata \
 --bldtb \"${dtb_file}.signed\" --applet rcm_1_signed.rcm --cfg flash.xml --chip 0x21 \
 --cmd \"secureflash;reboot\" $binargs" > flashcmd.txt
 	chmod +x flashcmd.txt
 	ln -sf flashcmd.txt ./secureflash.sh
 	rm -f APPFILE DATAFILE
+	exit 0
     fi
-    [ $bup_blob -ne 0 ] || exit 0
+    if [ $bup_blob -eq 0 -a "$sdcard" != "yes" ]; then
+	flashcmd="python3 $flashapp ${inst_args} --bl cboot.bin.signed --bct \"$(basename $sdramcfg_file .cfg).bct\" --odmdata $odmdata \
+--bldtb \"${dtb_file}.signed\" --applet rcm_1_signed.rcm --cfg flash.xml --chip 0x21 \
+--cmd \"secureflash;reboot\" $binargs"
+	eval "$flashcmd" || exit 1
+	exit 0
+    fi
     touch odmsign.func
 fi
 
-flashcmd="python3 $flashapp --bl cboot.bin --bct \"$sdramcfg_file\" --odmdata $odmdata \
+flashcmd="python3 $flashapp ${inst_args} --bl cboot.bin --bct \"$sdramcfg_file\" --odmdata $odmdata \
  --bldtb \"$dtb_file\" --applet nvtboot_recovery.bin \
  $boardcfg --cfg flash.xml --chip 0x21 --cmd \"$cmd\" $binargs"
 
 if [ $bup_blob -ne 0 ]; then
-    [ -z "$keyfile" ] || flashcmd="${flashcmd} --key \"$keyfile\""
+    [ -z "$keyfile" ] || flashcmd="${flashcmd} $keyfile_args"
     support_multi_spec=1
     clean_up=0
     dtbfilename="$dtb_file"
@@ -250,9 +287,15 @@ if [ $bup_blob -ne 0 ]; then
     localbootfile="boot.img"
     . "$here/l4t_bup_gen.func"
     spec="${BOARDID}-${FAB}-${BOARDSKU}-${BOARDREV}-1-0-${MACHINE}-${BOOTDEV}"
+    if [ $(expr length "$spec") -ge 64 ]; then
+	echo "ERR: TNSPEC must be shorter than 64 characters: $spec" >&2
+	exit 1
+    fi
     l4t_bup_gen "$flashcmd" "$spec" "$fuselevel" t210ref "$keyfile" "" 0x21 || exit 1
 else
-    eval "$flashcmd" || exit 1
+    if [ -z "$keyfile" ]; then
+	eval "$flashcmd" || exit 1
+    fi
     if [ -n "$sdcard" ]; then
 	if [ -n "$pre_sdcard_sed" ]; then
 	    rm -f signed/flash.xml.in

@@ -2,14 +2,17 @@
 bup_blob=0
 keyfile=
 sbk_keyfile=
+user_keyfile=
+spi_only=
 sdcard=
 no_flash=0
 flash_cmd=
 imgfile=
 dataimg=
+inst_args=""
 blocksize=4096
 
-ARGS=$(getopt -n $(basename "$0") -l "bup,no-flash,sdcard,datafile:" -o "u:v:s:b:B:yc:" -- "$@")
+ARGS=$(getopt -n $(basename "$0") -l "bup,no-flash,sdcard,spi-only,datafile:,usb-instance:,user_key:" -o "u:v:s:b:B:yc:" -- "$@")
 if [ $? -ne 0 ]; then
     echo "Error parsing options" >&2
     exit 1
@@ -31,8 +34,21 @@ while true; do
 	    sdcard=yes
 	    shift
 	    ;;
+	--spi-only)
+	    spi_only=yes
+	    shift
+	    ;;
 	--datafile)
 	    dataimg="$2"
+	    shift 2
+	    ;;
+	--usb-instance)
+	    usb_instance="$2"
+	    inst_args="--instance ${usb_instance}"
+	    shift 2
+	    ;;
+	--user_key)
+	    user_keyfile="$2"
 	    shift 2
 	    ;;
 	-u)
@@ -112,16 +128,20 @@ if [ -z "$CHIPREV" ]; then
 	echo "ERR: chip ID mismatch for Xavier" >&2
 	exit 1
     fi
-    if [ "${chipid:2:1}" != "8" ]; then
-	echo "ERR: non-production chip found" >&2
-	exit 1
-    fi
+    case "${chipid:2:1}" in
+	8|9|d)
+	    ;;
+	*)
+	    echo "ERR: non-production chip found" >&2
+	    exit 1
+	    ;;
+    esac
     CHIPREV="${chipid:5:1}"
     skipuid="--skipuid"
 fi
 
 if [ -z "$FAB" -o -z "$BOARDID" -o \( "$BOARDID" = "2888" -a \( -z "$BOARDSKU" -o \( "$BOARDSKU" != "0004" -a -z "$BOARDREV" \) \) \) ]; then
-    if ! python3 $flashappname --chip 0x19 --applet mb1_t194_prod.bin $skipuid --soft_fuses tegra194-mb1-soft-fuses-l4t.cfg \
+    if ! python3 $flashappname ${inst_args} --chip 0x19 --applet mb1_t194_prod.bin $skipuid --soft_fuses tegra194-mb1-soft-fuses-l4t.cfg \
 		 --bins "mb2_applet nvtboot_applet_t194.bin" --cmd "dump eeprom boardinfo ${cvm_bin};reboot recovery"; then
 	echo "ERR: could not retrieve EEPROM board information" >&2
 	exit 1
@@ -215,7 +235,8 @@ for var in $FLASHVARS; do
 	echo "ERR: missing variable: $var" >&2
 	exit 1
     elif [ -n "$pat" ]; then
-	eval $var=`echo $pat | sed -e"s,@BPFDTBREV@,$BPFDTBREV," -e"s,@BOARDREV@,$TOREV," -e"s,@PMICREV@,$PMICREV," -e"s,@CHIPREV@,$CHIPREV,"`
+	val=$(echo $pat | sed -e"s,@BPFDTBREV@,$BPFDTBREV," -e"s,@BOARDREV@,$TOREV," -e"s,@PMICREV@,$PMICREV," -e"s,@CHIPREV@,$CHIPREV,")
+	eval $var='$val'
     fi
 done
 
@@ -244,6 +265,7 @@ else
 fi
 appfile_sed=
 if [ $bup_blob -ne 0 ]; then
+    kernfile="${kernfile:-boot.img}"
     appfile_sed="-e/APPFILE/d -e/DATAFILE/d"
 elif [ $no_flash -eq 0 -a -z "$sdcard" ]; then
     appfile_sed="-es,APPFILE,$appfile, -es,DATAFILE,$datafile,"
@@ -255,7 +277,25 @@ else
     fi
     touch APPFILE
 fi
-sed -e"s,VERFILE,${MACHINE}_bootblob_ver.txt," -e"s,BPFDTB_FILE,$BPFDTB_FILE," $appfile_sed "$flash_in" > flash.xml
+
+dtb_file_basename=$(basename "$dtb_file")
+kernel_dtbfile="kernel_$dtb_file_basename"
+rm -f "$kernel_dtbfile"
+cp "$dtb_file" "$kernel_dtbfile"
+
+if [ "$spi_only" = "yes" ]; then
+    if [ ! -e "$here/nvflashxmlparse" ]; then
+	echo "ERR: missing nvflashxmlparse script" >&2
+	exit 1
+    fi
+    "$here/nvflashxmlparse" --extract -t spi -o flash.xml.tmp "$flash_in" || exit 1
+else
+    cp "$flash_in" flash.xml.tmp
+fi
+sed -e"s,VERFILE,${MACHINE}_bootblob_ver.txt," -e"s,BPFDTB_FILE,$BPFDTB_FILE," \
+    -e"s,TBCDTB-FILE,$dtb_file," -e"s, DTB_FILE,$kernel_dtbfile," \
+    $appfile_sed flash.xml.tmp > flash.xml
+rm flash.xml.tmp
 
 BINSARGS="mb2_bootloader nvtboot_recovery_t194.bin; \
 mts_preboot preboot_c10_prod_cr.bin; \
@@ -268,25 +308,19 @@ tlk tos-trusty_t194.img; \
 eks eks.img; \
 bootloader_dtb $dtb_file"
 
-if [ -n "$UPHY_CONFIG" ]; then
-    bctargs="--uphy_config $UPHY_CONFIG"
-else
-    bctargs=
-fi
-
-bctargs="$bctargs \
-	      --device_config $DEVICE_CONFIG \
-	      --misc_config tegra194-mb1-bct-misc-flash.cfg \
-	      --misc_cold_boot_config $MISC_COLD_BOOT_CONFIG \
-	      --pinmux_config $PINMUX_CONFIG \
-	      --gpioint_config $GPIOINT_CONFIG \
-	      --pmic_config $PMIC_CONFIG \
-	      --pmc_config $PMC_CONFIG \
-	      --prod_config $PROD_CONFIG \
-	      --scr_config $SCR_CONFIG \
-	      --scr_cold_boot_config $SCR_COLD_BOOT_CONFIG \
-	      --br_cmd_config $BR_CMD_CONFIG \
-	      --dev_params $DEV_PARAMS"
+bctargs="$UPHY_CONFIG $MINRATCHET_CONFIG $TRIM_BPMP_DTB \
+         --device_config $DEVICE_CONFIG \
+         --misc_config tegra194-mb1-bct-misc-flash.cfg \
+         --misc_cold_boot_config $MISC_COLD_BOOT_CONFIG \
+         --pinmux_config $PINMUX_CONFIG \
+         --gpioint_config $GPIOINT_CONFIG \
+         --pmic_config $PMIC_CONFIG \
+         --pmc_config $PMC_CONFIG \
+         --prod_config $PROD_CONFIG \
+         --scr_config $SCR_CONFIG \
+         --scr_cold_boot_config $SCR_COLD_BOOT_CONFIG \
+         --br_cmd_config $BR_CMD_CONFIG \
+         --dev_params $DEV_PARAMS"
 
 
 if [ $bup_blob -ne 0 -o "$sdcard" = "yes" ]; then
@@ -304,11 +338,45 @@ else
     tfcmd=${flash_cmd:-"flash;reboot"}
 fi
 
+temp_user_dir=
 if [ -n "$keyfile" ]; then
+    if [ -n "$sbk_keyfile" ]; then
+	if [ -z "$user_keyfile" ]; then
+	    rm -f "null_user_key.txt"
+	    echo "0x00000000 0x00000000 0x00000000 0x00000000" > null_user_key.txt
+	    user_keyfile=$(readlink -f null_user_key.txt)
+	fi
+	rm -rf signed_bootimg_dir
+	mkdir signed_bootimg_dir
+	cp "$kernfile" "$kernel_dtbfile" signed_bootimg_dir/
+	oldwd="$PWD"
+	cd signed_bootimg_dir
+	if [ -x $here/l4t_sign_image.sh ]; then
+	    signimg="$here/l4t_sign_image.sh";
+	else
+	    hereparent=$(readlink -f "$here/.." 2>/dev/null)
+	    if [ -n "$hereparent" -a -x "$hereparent/l4t_sign_image.sh" ]; then
+		signimg="$hereparent/l4t_sign_image.sh"
+	    fi
+	fi
+	if [ -z "$signimg" ]; then
+	    echo "ERR: missing l4t_sign_image script" >&2
+	    exit 1
+	fi
+	"$signimg" --file "$kernfile"  --key "$keyfile" --encrypt_key "$user_keyfile" --chip 0x19 --split False &&
+	    "$signimg" --file "$kernel_dtbfile"  --key "$keyfile" --encrypt_key "$user_keyfile" --chip 0x19 --split False
+	rc=$?
+	cd "$oldwd"
+	if [ $rc -ne 0 ]; then
+	    echo "Error signing kernel image or device tree" >&2
+	    exit 1
+	fi
+	temp_user_dir=signed_bootimg_dir
+    fi
     CHIPID="0x19"
     tegraid="$CHIPID"
     localcfgfile="flash.xml"
-    dtbfilename="$dtb_file"
+    dtbfilename="$kernel_dtbfile"
     tbcdtbfilename="$dtb_file"
     bpfdtbfilename="$BPFDTB_FILE"
     localbootfile="$kernfile"
@@ -318,7 +386,11 @@ if [ -n "$keyfile" ]; then
     bctfilename=`echo $sdramcfg_files | cut -d, -f1`
     bctfile1name=`echo $sdramcfg_files | cut -d, -f2`
     SOSARGS="--applet mb1_t194_prod.bin "
+    NV_ARGS="--soft_fuses tegra194-mb1-soft-fuses-l4t.cfg "
     BCTARGS="$bctargs"
+    rootfs_ab=0
+    rcm_boot=0
+    external_device=0
     . "$here/odmsign.func"
     (odmsign_ext) || exit 1
     if [ $no_flash -ne 0 ]; then
@@ -328,13 +400,19 @@ if [ -n "$keyfile" ]; then
 	else
 	    echo "WARN: signing completed successfully, but flashcmd.txt missing" >&2
 	fi
-	rm -f APPFILE DATAFILE
+	rm -f APPFILE DATAFILE null_user_key.txt
     fi
-    [ $bup_blob -ne 0 ] || exit 0
+    if [ $bup_blob -eq 0 ]; then
+	if [ -n "$temp_user_dir" ]; then
+	    cp "$temp_user_dir"/*.encrypt.signed .
+	    rm -rf "$temp_user_dir"
+	fi
+	exit 0
+    fi
     touch odmsign.func
 fi
 
-flashcmd="python3 $flashappname --chip 0x19 --bl nvtboot_recovery_cpu_t194.bin \
+flashcmd="python3 $flashappname ${inst_args} --chip 0x19 --bl nvtboot_recovery_cpu_t194.bin \
 	      --sdram_config $sdramcfg_files \
 	      --odmdata $odmdata \
 	      --applet mb1_t194_prod.bin \
@@ -349,15 +427,19 @@ if [ $bup_blob -ne 0 ]; then
     [ -z "$sbk_keyfile" ] || flashcmd="${flashcmd} --encrypt_key \"$sbk_keyfile\""
     support_multi_spec=1
     clean_up=0
-    dtbfilename="$dtb_file"
+    dtbfilename="$kernel_dtbfile"
     tbcdtbfilename="$dtb_file"
     bpfdtbfilename="$BPFDTB_FILE"
     localbootfile="boot.img"
     . "$here/l4t_bup_gen.func"
     spec="${BOARDID}-${FAB}-${BOARDSKU}-${BOARDREV}-1-${CHIPREV}-${MACHINE}-${BOOTDEV}"
+    if [ $(expr length "$spec") -ge 64 ]; then
+	echo "ERR: TNSPEC must be shorter than 64 characters: $spec" >&2
+	exit 1
+    fi
     l4t_bup_gen "$flashcmd" "$spec" "$fuselevel" t186ref "$keyfile" "$sbk_keyfile" 0x19 || exit 1
 else
-    eval $flashcmd || exit 1
+    eval $flashcmd < /dev/null || exit 1
     if [ -n "$sdcard" ]; then
 	if [ -n "$pre_sdcard_sed" ]; then
 	    rm -f signed/flash.xml.tmp.in
