@@ -43,6 +43,17 @@ def cuda_meson_ldflags(d):
     return '-Xlinker ' + ','.join(linkargs)
 CUFLAGS = "-ccbin ${@cuda_extract_compiler('CXX', d)[0]} ${CUDAFLAGS} ${@cuda_extract_compiler('CXX', d)[1]} ${@cuda_meson_ldflags(d)}"
 
+# Obtain the GPU architecture cuda major/minor version
+# based on the gpu-code argument used with CUDA_NVCC_ARCH_FLAGS
+def extract_sm(d):
+    archflags = d.getVar('CUDA_NVCC_ARCH_FLAGS').split()
+    for flag in archflags:
+        parts = flag.split('=')
+        if len(parts) == 2 and parts[0] == '--gpu-code':
+            return parts[1].split('_')[1]
+    return ''
+
+
 # The following are for the old-style FindCUDA.cmake module (pre-3.8)
 CUDA_EXTRA_OECMAKE = '\
   -DCUDA_TOOLKIT_TARGET_DIR=${STAGING_DIR_HOST}/usr/local/cuda-${CUDA_VERSION} \

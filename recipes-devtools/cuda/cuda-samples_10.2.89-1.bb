@@ -24,14 +24,6 @@ inherit l4t_deb_pkgfeed cuda
 
 CUDA_NVCC_ARCH_FLAGS ??= ""
 
-def extract_sm(d):
-    archflags = d.getVar('CUDA_NVCC_ARCH_FLAGS').split()
-    for flag in archflags:
-        parts = flag.split('=')
-        if len(parts) == 2 and parts[0] == '--gpu-code':
-            return parts[1].split('_')[1]
-    return ''
-
 CUDA_SAMPLES ?= " \
     0_Simple/UnifiedMemoryStreams \
     1_Utilities/deviceQuery \
