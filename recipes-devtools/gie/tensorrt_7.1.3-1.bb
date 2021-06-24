@@ -77,7 +77,7 @@ do_install() {
     install -d ${D}${includedir}
     install -m 0644 ${S}/usr/include/aarch64-linux-gnu/*.h ${D}${includedir}
     install -d ${D}${libdir}
-    tar -C ${S}/usr/lib/aarch64-linux-gnu -cf- . | tar -C ${D}${libdir}/ --no-same-owner -xf-
+    tar -C ${S}/usr/lib/aarch64-linux-gnu -cf- . | tar -C ${D}${libdir}/ --exclude "libvinfer_plugin.so*" --no-same-owner -xf-
     install -d ${D}${prefix}/src
     cp --preserve=mode,timestamps --recursive ${S}/usr/src/tensorrt ${D}${prefix}/src/
 }
