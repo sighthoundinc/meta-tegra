@@ -1,0 +1,43 @@
+From 2906206f681bf9a8968fe1195dc8e882bcc18726 Mon Sep 17 00:00:00 2001
+From: Dan Walkes <danwalkes@boulderai.com>
+Date: Wed, 23 Jun 2021 16:01:47 -0600
+Subject: [PATCH] Use CUDA_TOOLKIT_TARGET_DIR
+
+To avoid attempting to link with host libraries.
+
+Signed-off-by: Dan Walkes <danwalkes@boulderai.com>
+---
+ CMakeLists.txt | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index a18cbd0..78686fb 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -112,11 +112,11 @@ include_directories(
+     ${CUDNN_ROOT_DIR}/include
+ )
+ find_library(CUDNN_LIB cudnn HINTS
+-    ${CUDA_TOOLKIT_ROOT_DIR} ${CUDNN_ROOT_DIR} PATH_SUFFIXES lib64 lib)
++    ${CUDA_TOOLKIT_TARGET_DIR} ${CUDNN_ROOT_DIR} PATH_SUFFIXES lib64 lib)
+ find_library(CUBLAS_LIB cublas HINTS
+-    ${CUDA_TOOLKIT_ROOT_DIR} PATH_SUFFIXES lib64 lib lib/stubs)
++    ${CUDA_TOOLKIT_TARGET_DIR} PATH_SUFFIXES lib64 lib lib/stubs)
+ find_library(CUBLASLT_LIB cublasLt HINTS
+-    ${CUDA_TOOLKIT_ROOT_DIR} PATH_SUFFIXES lib64 lib lib/stubs)
++    ${CUDA_TOOLKIT_TARGET_DIR} PATH_SUFFIXES lib64 lib lib/stubs)
+ if(BUILD_PARSERS)
+     configure_protobuf(${PROTOBUF_VERSION})
+ endif()
+@@ -124,7 +124,7 @@ endif()
+ find_library_create_target(nvinfer nvinfer SHARED ${TRT_LIB_DIR})
+ find_library_create_target(nvuffparser nvparsers SHARED ${TRT_LIB_DIR})
+ 
+-find_library(CUDART_LIB cudart HINTS ${CUDA_TOOLKIT_ROOT_DIR} PATH_SUFFIXES lib lib64)
++find_library(CUDART_LIB cudart HINTS ${CUDA_TOOLKIT_TARGET_DIR} PATH_SUFFIXES lib lib64)
+ find_library(RT_LIB rt)
+ 
+ set(CUDA_LIBRARIES ${CUDART_LIB})
+-- 
+2.17.1
+
