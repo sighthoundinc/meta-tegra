@@ -77,7 +77,7 @@ do_install() {
     install -d ${D}${includedir}
     install -m 0644 ${S}/usr/include/aarch64-linux-gnu/*.h ${D}${includedir}
     install -d ${D}${libdir}
-    tar -C ${S}/usr/lib/aarch64-linux-gnu -cf- . | tar -C ${D}${libdir}/ --exclude "libvinfer_plugin.so*" --no-same-owner -xf-
+    tar -C ${S}/usr/lib/aarch64-linux-gnu -cf- . | tar -C ${D}${libdir}/ --exclude "libnvinfer_plugin.so*" --no-same-owner -xf-
     install -d ${D}${prefix}/src
     cp --preserve=mode,timestamps --recursive ${S}/usr/src/tensorrt ${D}${prefix}/src/
 }
@@ -92,7 +92,7 @@ RPROVIDES_${PN}-samples = "${PN}-examples"
 INHIBIT_PACKAGE_STRIP = "1"
 INHIBIT_PACKAGE_DEBUG_SPLIT = "1"
 INHIBIT_SYSROOT_STRIP = "1"
-INSANE_SKIP_${PN} = "textrel ldflags"
+INSANE_SKIP_${PN} = "textrel ldflags file-rdeps"
 INSANE_SKIP_${PN}-samples = "ldflags"
 PACKAGE_ARCH = "${TEGRA_PKGARCH}"
 PACKAGE_ARCH_tegra194 = "${SOC_FAMILY_PKGARCH}"
