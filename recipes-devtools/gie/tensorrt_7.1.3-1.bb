@@ -16,7 +16,6 @@ SRC_SOC_DEBS = "\
     libnvparsers-dev_${PV}+cuda10.2_arm64.deb;downloadfilename=${PREFIX}libnvparsers-dev_${PV}+cuda10.2_arm64.deb;name=nvpdev;subdir=tensorrt \
     libnvonnxparsers7_${PV}+cuda10.2_arm64.deb;downloadfilename=${PREFIX}libnvonnxparsers7_${PV}+cuda10.2_arm64.deb;name=onnx;subdir=tensorrt \
     libnvonnxparsers-dev_${PV}+cuda10.2_arm64.deb;downloadfilename=${PREFIX}libnvonnxparsers-dev_${PV}+cuda10.2_arm64.deb;name=onnxdev;subdir=tensorrt \
-    libnvinfer-plugin7_${PV}+cuda10.2_arm64.deb;downloadfilename=${PREFIX}libnvinfer-plugin7_${PV}+cuda10.2_arm64.deb;name=plugin;subdir=tensorrt \
     libnvinfer-plugin-dev_${PV}+cuda10.2_arm64.deb;downloadfilename=${PREFIX}libnvinfer-plugin-dev_${PV}+cuda10.2_arm64.deb;name=plugindev;subdir=tensorrt \
     libnvinfer-bin_${PV}+cuda10.2_arm64.deb;downloadfilename=${PREFIX}libnvinfer-bin_${PV}+cuda10.2_arm64.deb;name=bin;subdir=tensorrt \
 "
@@ -77,10 +76,24 @@ do_install() {
     install -d ${D}${includedir}
     install -m 0644 ${S}/usr/include/aarch64-linux-gnu/*.h ${D}${includedir}
     install -d ${D}${libdir}
-    tar -C ${S}/usr/lib/aarch64-linux-gnu -cf- . | tar -C ${D}${libdir}/ --exclude "libnvinfer_plugin.so*" --no-same-owner -xf-
+    tar -C ${S}/usr/lib/aarch64-linux-gnu -cf- . | tar -C ${D}${libdir}/ --no-same-owner -xf-
+    for f in ${D}${libdir}/libnvinfer_plugin.so*;do mv $f $f.${PN};done
     install -d ${D}${prefix}/src
     cp --preserve=mode,timestamps --recursive ${S}/usr/src/tensorrt ${D}${prefix}/src/
 }
+
+pkg_postinst_${PN} () {
+    update-alternatives --install ${libdir}/libnvinfer_plugin.so libnvinferplugin.so libnvinfer_plugin.so.${PN} 10
+    update-alternatives --install ${libdir}/libnvinfer_plugin.so.7 libnvinferplugin.so.7 libnvinfer_plugin.so.7.${PN} 10
+    update-alternatives --install ${libdir}/libnvinfer_plugin.so.7.1.3 libnvinferplugin.so.7.1.3 libnvinfer_plugin.so.7.1.3.${PN} 10
+}
+
+pkg_prerm_${PN} () {
+    update-alternatives --remove libnvinferplugin.so libnvinfer_plugin.so.${PN}
+    update-alternatives --remove libnvinferplugin.so.7 libnvinfer_plugin.so.7.${PN}
+    update-alternatives --remove libnvinferplugin.so.7.1.3 libnvinfer_plugin.so.7.1.3.${PN}
+}
+
 PACKAGES += "${PN}-samples"
 FILES_${PN} += "${prefix}/src/tensorrt/bin"
 FILES_${PN}-samples = "${prefix}/src"

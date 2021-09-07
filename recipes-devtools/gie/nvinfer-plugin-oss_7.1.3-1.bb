@@ -25,6 +25,19 @@ CXXFLAGS += "${CUDA_CXXFLAGS}"
 do_install() {
     install -d ${D}${libdir}
     cp --preserve=mode,timestamps  ${B}/libnvinfer_plugin.so* ${D}${libdir}
+    for f in ${D}${libdir}/libnvinfer_plugin.so*;do mv $f $f.${PN};done
+}
+
+pkg_postinst_${PN} () {
+    update-alternatives --install ${libdir}/libnvinfer_plugin.so libnvinferplugin.so libnvinfer_plugin.so.${PN} 100
+    update-alternatives --install ${libdir}/libnvinfer_plugin.so.7 libnvinferplugin.so.7 libnvinfer_plugin.so.7.${PN} 100
+    update-alternatives --install ${libdir}/libnvinfer_plugin.so.7.1.3 libnvinferplugin.so.7.1.3 libnvinfer_plugin.so.7.1.3.${PN} 100
+}
+
+pkg_prerm_${PN} () {
+    update-alternatives --remove libnvinferplugin.so libnvinfer_plugin.so.${PN}
+    update-alternatives --remove libnvinferplugin.so.7 libnvinfer_plugin.so.7.${PN}
+    update-alternatives --remove libnvinferplugin.so.7.1.3 libnvinfer_plugin.so.7.1.3.${PN}
 }
 
 # Without this I get:
