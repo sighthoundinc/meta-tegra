@@ -1,6 +1,6 @@
-DESCRIPTION = "NVIDIA Transfer Learning Toolkit custom parser"
+DESCRIPTION = "NVIDIA Transfer Learning Toolkit sample applications"
 LICENSE = "Apache-2.0"
-LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/${LICENSE};md5=89aea4e17d99a7cacdbeed46a0096b10"
+LIC_FILES_CHKSUM = "file://LICENSE.md;md5=dbef1fb16cd9e5c5249a8e0c5e639fb0"
 
 DEPENDS = " deepstream-5.0"
 
