@@ -30,6 +30,7 @@ do_install () {
 
 PACKAGES += "${PN}-samples ${PN}-custom-parser"
 FILES_${PN} = ""
+ALLOW_EMPTY_${PN} = "1"
 FILES_${PN}-custom-parser = "${libdir}"
 FILES_${PN}-samples = "${TLT_SAMPLES_PATH}"
 RDEPENDS_${PN} += "${PN}-samples ${PN}-custom-parser"
