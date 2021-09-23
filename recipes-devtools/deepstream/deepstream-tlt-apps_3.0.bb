@@ -16,9 +16,21 @@ EXTRA_OEMAKE += " CC='${CXX}' CUDA_VER=${CUDA_VERSION}"
 
 TARGET_CC_ARCH += "${LDFLAGS}"
 
-FILES_${PN} += "${libdir}/libnvds_infercustomparser_tlt.so.${PV}"
+TLT_SAMPLES_PATH = "${bindir}/tlt_samples"
 
 do_install () {
     install -d ${D}${libdir}
     install -m 0755 ${S}/post_processor/libnvds_infercustomparser_tlt.so ${D}${libdir}/libnvds_infercustomparser_tlt.so.${PV}
+
+    install -d ${D}${TLT_SAMPLES_PATH}
+    install -m 0755 ${S}/apps/tlt_detection/ds-tlt-detection ${D}${TLT_SAMPLES_PATH}
+    install -m 0755 ${S}/apps/tlt_segmentation/ds-tlt-segmentation ${D}${TLT_SAMPLES_PATH}
+    install -m 0755 ${S}/apps/tlt_classifier/ds-tlt-classifier ${D}${TLT_SAMPLES_PATH}
 }
+
+PACKAGES += "${PN}-samples ${PN}-custom-parser"
+FILES_${PN} = ""
+FILES_${PN}-custom-parser = "${libdir}"
+FILES_${PN}-samples = "${TLT_SAMPLES_PATH}"
+RDEPENDS_${PN} += "${PN}-samples ${PN}-custom-parser"
+RDEPENDS_${PN}-samples += "deepstream-5.0"
