@@ -9,9 +9,8 @@ SRCREV = "16405b1a725a888cf6473cdd4fd0cb7effbf393f"
 
 S = "${WORKDIR}/git"
 
-inherit pkgconfig
+inherit pkgconfig cuda
 
-TARGET_CFLAGS += " -I${RECIPE_SYSROOT}${includedir} -I${RECIPE_SYSROOT}/usr/local/cuda-${CUDA_VERSION}/include -L${RECIPE_SYSROOT}/usr/local/cuda-${CUDA_VERSION}/lib"
 TARGET_LDFLAGS += " -L${RECIPE_SYSROOT}/opt/nvidia/deepstream/deepstream-5.0/lib"
 EXTRA_OEMAKE += " CC='${CXX}' CUDA_VER=${CUDA_VERSION}"
 
