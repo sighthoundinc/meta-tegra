@@ -238,7 +238,6 @@ BOOTFILES:tegra194 = "\
     nvtboot_cpu_t194.bin \
     nvtboot_recovery_t194.bin \
     nvtboot_recovery_cpu_t194.bin \
-    slot_metadata.bin \
     spe_t194.bin \
     warmboot_t194_prod.bin \
     xusb_sil_rel_fw \
@@ -309,8 +308,6 @@ create_tegraflash_pkg:tegra194() {
     else
 	rm -f ./cbo.dtb
     fi
-    rm -f ./slot_metadata.bin
-    cp ${STAGING_DATADIR}/tegraflash/slot_metadata.bin ./
     rm -rf ./rollback
     mkdir ./rollback
     cp -R ${STAGING_DATADIR}/nv_tegra/rollback/t${@d.getVar('NVIDIA_CHIP')[2:]}x ./rollback/
@@ -405,8 +402,6 @@ create_tegraflash_pkg:tegra234() {
     else
 	rm -f ./cbo.dtb
     fi
-    rm -f ./slot_metadata.bin
-    cp ${STAGING_DATADIR}/tegraflash/slot_metadata.bin ./
 
     # Copy and update flashvars
     cp ${STAGING_DATADIR}/tegraflash/flashvars .
@@ -593,8 +588,6 @@ oe_make_bup_payload() {
         boardcfg=
     fi
     export boardcfg
-    rm -f ./slot_metadata.bin
-    cp ${STAGING_DATADIR}/tegraflash/slot_metadata.bin ./
     mkdir ./rollback
     cp -R ${STAGING_DATADIR}/nv_tegra/rollback/t${@d.getVar('NVIDIA_CHIP')[2:]}x ./rollback/
     if [ "${TEGRA_SIGNING_EXCLUDE_TOOLS}" != "1" ]; then

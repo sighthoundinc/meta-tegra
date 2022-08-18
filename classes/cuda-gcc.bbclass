@@ -1,4 +1,4 @@
-# CUDA requires gcc/g++ 8, so add that compiler and its runtime as
+# CUDA requires gcc/g++ 9, so add that compiler and its runtime as
 # dependencies, and set CC_FOR_CUDA and CXX_FOR_CUDA to point to that compiler.
 DEPENDS:append:cuda = " virtual/${TARGET_PREFIX}cuda-gcc gcc-8-runtime"
 CUDA_HOST_TOOLCHAIN_SUFFIX ??= ""

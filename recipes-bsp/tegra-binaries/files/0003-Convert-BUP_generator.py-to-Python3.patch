@@ -1,30 +1,26 @@
-From 35ff09d78c84a8a94eaeb1d791ee6f67067afe0c Mon Sep 17 00:00:00 2001
-From: Matt Madison <matt@madison.systems>
-Date: Wed, 22 Jan 2020 05:53:04 -0800
-Subject: [PATCH] Convert BUP_generator.py to Python3
+From 4ecf62944eb2e88357af0ea7812eeb29de3861cd Mon Sep 17 00:00:00 2001
+From: Atharva Nandanwar <anandanwar@sighthound.com>
+Date: Tue, 16 Aug 2022 17:22:42 -0600
+Subject: [PATCH] t
 
-%% original patch: 0003-Convert-BUP_generator.py-to-Python3.patch
-
-%% original patch: 0003-Convert-BUP_generator.py-to-Python3.patch
 ---
- bootloader/BUP_generator.py | 192 ++++++++++++++----------------------
- 1 file changed, 76 insertions(+), 116 deletions(-)
+ bootloader/BUP_generator.py | 193 ++++++++++++++----------------------
+ 1 file changed, 77 insertions(+), 116 deletions(-)
 
 diff --git a/bootloader/BUP_generator.py b/bootloader/BUP_generator.py
-index 501027e..024d0a6 100755
+index 6aaf5e8..a336e59 100755
 --- a/bootloader/BUP_generator.py
 +++ b/bootloader/BUP_generator.py
 @@ -1,4 +1,4 @@
 -#!/usr/bin/python
 +#!/usr/bin/env python3
  #
- # Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
  #
-@@ -54,11 +54,6 @@ Appendix:
- 
+@@ -55,10 +55,6 @@ Appendix:
  import copy
  import sys
--
+ 
 -if sys.hexversion < 0x02070000:
 -  print >> sys.stderr, "Python 2.7 or newer is required."
 -  sys.exit(1)
@@ -32,18 +28,19 @@ index 501027e..024d0a6 100755
  import os
  import sys
  import struct
-@@ -151,8 +146,8 @@ def generate_BUP(arg):
+@@ -154,20 +150,20 @@ def generate_BUP(arg):
      global top_var
  
      # Check "TOP" variable is set and is valid
 -    if not os.environ.has_key("TOP") or not os.path.isdir(os.environ["TOP"]):
 -        if not os.environ.has_key("ANDROID_BUILD_TOP") or \
+-                not os.path.isdir(os.environ["ANDROID_BUILD_TOP"]):
 +    if "TOP" not in os.environ or not os.path.isdir(os.environ["TOP"]):
 +        if "ANDROID_BUILD_TOP" not in os.environ or \
-                 not os.path.isdir(os.environ["ANDROID_BUILD_TOP"]):
++            not os.path.isdir(os.environ["ANDROID_BUILD_TOP"]):
              sys.stderr.write("Environment variable TOP not set or invalid.\n")
              return
-@@ -160,11 +155,11 @@ def generate_BUP(arg):
+         else:
              top_var = "ANDROID_BUILD_TOP"
  
      # Check "OUT" variable is set and is valid
@@ -57,7 +54,7 @@ index 501027e..024d0a6 100755
  
      if arg.blob_type == 'update':
          payload_obj = update_payload(arg)
-@@ -187,8 +182,8 @@ def inspect_BUP(arg):
+@@ -190,8 +186,8 @@ def inspect_BUP(arg):
          sys.stderr.write("Error. Last argument must be a path to a valid blob file. Exiting...\r\n")
          sys.exit(1)
  
@@ -68,7 +65,7 @@ index 501027e..024d0a6 100755
  
      if arg.blob_type == 'update':
          payload_obj = inspect_update_payload(arg)
-@@ -200,18 +195,18 @@ def inspect_BUP(arg):
+@@ -203,18 +199,18 @@ def inspect_BUP(arg):
          sys.exit(1)
  
      if arg.inspect_mode is True and arg.check_entries is True:
@@ -92,7 +89,7 @@ index 501027e..024d0a6 100755
              sys.stderr.write("Environment variable OUT not set or invalid.\r\n" \
                               "Error. Cannot save binaries. Exiting...\r\n"
                              )
-@@ -234,7 +229,7 @@ class payload():
+@@ -237,7 +233,7 @@ class payload():
          return version
  
      def __init__(self, args):
@@ -101,16 +98,16 @@ index 501027e..024d0a6 100755
          self.version = self.gen_version()
          self.blob_size_pos = struct.calcsize('=16sI')
          self.header_packing = '=16sIIIIII'
-@@ -317,7 +312,7 @@ class update_payload(payload):
+@@ -320,7 +316,7 @@ class update_payload(payload):
          payload.__init__(self, arg)
          self.blob_type = 0
-         self.entry_packing = '=40sIIII64s'
+         self.entry_packing = '=40sIIII128s'
 -        self.entry_tuple = ('', 0, 0, 0, 0, '')
 +        self.entry_tuple = (b'', 0, 0, 0, 0, b'')
          self.param_c = 5
          self.outfile = 'ota.blob'
  
-@@ -328,7 +323,7 @@ class update_payload(payload):
+@@ -331,7 +327,7 @@ class update_payload(payload):
  
              entry_info = self.entry_info_list[i]
              if len(entry_info) != self.param_c:
@@ -119,7 +116,7 @@ index 501027e..024d0a6 100755
                  return
  
              binary_name = payload.get_binary_name(self, entry_info[0])
-@@ -372,7 +367,7 @@ class update_payload(payload):
+@@ -375,7 +371,7 @@ class update_payload(payload):
              spec_info = entry_info[4]
              offset = entry_update[0]
              length = entry_update[1]
@@ -128,7 +125,7 @@ index 501027e..024d0a6 100755
              updated_entry = struct.pack(self.entry_packing, *entry_tuple)
              blob.write(updated_entry)
  
-@@ -401,7 +396,7 @@ class bmp_payload(payload):
+@@ -404,7 +400,7 @@ class bmp_payload(payload):
  
              entry_info = self.entry_info_list[i]
              if len(entry_info) != self.param_c:
@@ -137,7 +134,7 @@ index 501027e..024d0a6 100755
                  return
  
              binary_name = payload.get_binary_name(self, entry_info[0])
-@@ -445,7 +440,7 @@ class inspect_update_payload(update_payload):
+@@ -448,7 +444,7 @@ class inspect_update_payload(update_payload):
          self.raw_extract_bin_list = arg.inspect_extract_bin_list
  
          self.blob_header_tuple = struct.unpack(self.header_packing, self.blob_file.read(struct.calcsize(self.header_packing)))
@@ -146,7 +143,7 @@ index 501027e..024d0a6 100755
  
          # # Detect if optional accessory field (8 bytes) is present
          if self.blob_header_dict['header_size'] > struct.calcsize(self.header_packing):
-@@ -454,8 +449,8 @@ class inspect_update_payload(update_payload):
+@@ -457,8 +453,8 @@ class inspect_update_payload(update_payload):
  
          if not self._valid():
              sys.stderr.write("Warning. Invalid input blob file. Results may be unexpected.\r\n" \
@@ -157,7 +154,7 @@ index 501027e..024d0a6 100755
                               "    Input version: " + format(self.blob_header_dict['version'], "#010x") + "\r\n" \
                               " Expected version: " + format(self.version, "#010x") + "\r\n" \
                               "       Input type: " + str(self.blob_header_dict['type']) + "\r\n" \
-@@ -463,15 +458,15 @@ class inspect_update_payload(update_payload):
+@@ -466,15 +462,15 @@ class inspect_update_payload(update_payload):
                              )
  
          if self.blob_header_dict['entry_count'] > arg.inspect_max_entries:
@@ -179,7 +176,7 @@ index 501027e..024d0a6 100755
          for i in range(len(self.blob_entry_max_width_list)):
              self.blob_entry_max_width_list[i] = len(self.entry_name_tuple[i])
  
-@@ -488,13 +483,17 @@ class inspect_update_payload(update_payload):
+@@ -491,13 +487,17 @@ class inspect_update_payload(update_payload):
          for idx, blob_entry in enumerate(self.blob_entry_list):
              try:
                  blob_entry_tuple = struct.unpack(self.entry_packing, self.blob_file.read(struct.calcsize(self.entry_packing)))
@@ -200,7 +197,7 @@ index 501027e..024d0a6 100755
                      except:
                          pass
              except:
-@@ -523,101 +522,62 @@ class inspect_update_payload(update_payload):
+@@ -526,101 +526,62 @@ class inspect_update_payload(update_payload):
          return version
  
      def print_blob_header(self):
@@ -330,7 +327,7 @@ index 501027e..024d0a6 100755
 +                print("Error: partition {} missing for SPECs {}".format(part, ', '.join(sorted(missing))), file=sys.stderr)
 +                valid = False
 +
-+        if not valid:
++        if not valid:        
              sys.exit(1)
          else:
 -            print "Check entry table successful"
@@ -338,7 +335,7 @@ index 501027e..024d0a6 100755
  
      def extract_binaries(self):
          extract_bin_list = [extract_bin.strip(' \t\n\0') for extract_bin in self.raw_extract_bin_list.split(';')]
-@@ -627,14 +587,14 @@ class inspect_update_payload(update_payload):
+@@ -630,14 +591,14 @@ class inspect_update_payload(update_payload):
          out_ext = ".raw.bin"
          out_delim = "_"
  
@@ -358,7 +355,7 @@ index 501027e..024d0a6 100755
  
              if op_mode == 0:
                  op_str = ""
-@@ -650,7 +610,7 @@ class inspect_update_payload(update_payload):
+@@ -653,7 +614,7 @@ class inspect_update_payload(update_payload):
  
              if (part_name in extract_bin_set) or ("all" in extract_bin_set):
                  # Binary will be saved to <OUT>/<part_name>[_<op_str>][_<tnspec>].raw.bin
@@ -367,7 +364,7 @@ index 501027e..024d0a6 100755
                  binary_path = os.path.join(out_path, binary_name)
  
                  try:
-@@ -666,7 +626,7 @@ class inspect_update_payload(update_payload):
+@@ -669,7 +630,7 @@ class inspect_update_payload(update_payload):
                  # from "offset" of the specified partition name
                  save_file.write(self.blob_file.read(int(blob_entry['part_size'])))
  
@@ -377,5 +374,5 @@ index 501027e..024d0a6 100755
                  # Remove partition name that was just saved from the list of
                  # missing binaries (e.g. in extraction list but not in payload)
 -- 
-2.30.2
+2.34.1
 
